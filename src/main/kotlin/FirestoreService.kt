@@ -5,7 +5,6 @@ import com.example.model.Person
 import com.example.model.Thumbnail
 import com.google.auth.oauth2.GoogleCredentials
 import com.google.cloud.firestore.FieldValue
-import com.google.cloud.firestore.Filter
 import com.google.cloud.firestore.Firestore
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
@@ -22,8 +21,11 @@ class FirestoreService {
 
     init {
         if (FirebaseApp.getApps().isEmpty()) {
+            val serviceAccount = FirestoreService::class.java.classLoader
+                .getResourceAsStream("firebase-adminsdk.json")
+                ?: error("firebase-adminsdk.json not found in resources")
             val options = FirebaseOptions.builder()
-                .setCredentials(GoogleCredentials.getApplicationDefault())
+                .setCredentials(GoogleCredentials.fromStream(serviceAccount))
                 .build()
             FirebaseApp.initializeApp(options)
         }
