@@ -15,9 +15,10 @@ class RekognitionService {
     private val categorizePhotosUseCase by lazy { CategorizePhotosUseCase(client) }
 
     suspend fun initialize() {
-        client = RekognitionClient.fromEnvironment {
-            this.credentialsProvider = ProfileCredentialsProvider(profileName = PROFILE_NAME)
-        }
+//        client = RekognitionClient.fromEnvironment {
+//            this.credentialsProvider = ProfileCredentialsProvider(profileName = PROFILE_NAME)
+//        }
+        client = RekognitionClient { region = "eu-central-1" }
     }
 
     suspend fun createCollection(collectionId: String): Int {
