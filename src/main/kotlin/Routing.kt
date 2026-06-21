@@ -68,6 +68,13 @@ suspend fun Application.configureRouting() {
             call.respond(collectionCreationStatusCode)
         }
 
+        delete("/collections/{collectionId}") {
+            val collectionId = call.parameters["collectionId"]
+                ?: return@delete call.respond(HttpStatusCode.BadRequest, "Missing collectionId")
+            val statusCode = rekognition.deleteCollection(collectionId)
+            call.respond(HttpStatusCode.fromValue(statusCode))
+        }
+
         post("/indexFaces") {
             val multipart = call.receiveMultipart()
             var imageBytes: ByteArray? = null

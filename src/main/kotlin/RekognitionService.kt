@@ -1,7 +1,9 @@
 package com.example
 
+import aws.sdk.kotlin.runtime.auth.credentials.ProfileCredentialsProvider
 import aws.sdk.kotlin.services.rekognition.RekognitionClient
 import aws.sdk.kotlin.services.rekognition.createCollection
+import aws.sdk.kotlin.services.rekognition.deleteCollection
 import aws.sdk.kotlin.services.rekognition.indexFaces
 import aws.sdk.kotlin.services.rekognition.listFaces
 import aws.sdk.kotlin.services.rekognition.model.Image
@@ -34,6 +36,11 @@ class RekognitionService : HealthCheck {
 
     suspend fun createCollection(collectionId: String): Int {
         val response = client.createCollection { this.collectionId = collectionId }
+        return response.statusCode ?: 500
+    }
+
+    suspend fun deleteCollection(collectionId: String): Int {
+        val response = client.deleteCollection { this.collectionId = collectionId }
         return response.statusCode ?: 500
     }
 
