@@ -6,6 +6,8 @@ import aws.sdk.kotlin.services.rekognition.createCollection
 import aws.sdk.kotlin.services.rekognition.indexFaces
 import aws.sdk.kotlin.services.rekognition.listFaces
 import aws.sdk.kotlin.services.rekognition.model.Image
+import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 const val PROFILE_NAME = "AdministratorAccess-411055095438"
 
@@ -28,16 +30,25 @@ class RekognitionService {
 
     suspend fun listCollections(firestoreService: FirestoreService): List<CollectionInfo> {
         val ids = client.listCollections().collectionIds ?: emptyList()
-        return ids.map { id ->
-            val isComplete = firestoreService.hasCategorizationDocuments(id)
-            val imagesCount = client.listFaces { this.collectionId = id }.faces?.groupBy { it.externalImageId }?.size ?: 0
-            val status = when {
-                isComplete -> CollectionStatus.COMPLETE
-                imagesCount == 0 -> CollectionStatus.EMPTY
-                else -> CollectionStatus.IN_PROGRESS
+        val results = mutableListOf<CollectionInfo>()
+        for (batch in ids.chunked(RekognitionConstants.LIST_FACES_TPS)) {
+            val batchStart = System.currentTimeMillis()
+            batch.forEach { id ->
+                val isComplete = firestoreService.hasCategorizationDocuments(id)
+                val imagesCount = client.listFaces { this.collectionId = id }.faces?.groupBy { it.externalImageId }?.size ?: 0
+                val status = when {
+                    isComplete -> CollectionStatus.COMPLETE
+                    imagesCount == 0 -> CollectionStatus.EMPTY
+                    else -> CollectionStatus.IN_PROGRESS
+                }
+                results.add(CollectionInfo(id = id, imagesCount = imagesCount, status = status))
             }
-            CollectionInfo(id = id, imagesCount = imagesCount, status = status)
+            val elapsed = System.currentTimeMillis() - batchStart
+            if (elapsed < RekognitionConstants.QUOTA_WINDOW_MS) {
+                delay((RekognitionConstants.QUOTA_WINDOW_MS - elapsed).milliseconds)
+            }
         }
+        return results
     }
 
     suspend fun indexFaces(imageBytes: ByteArray, imageFilename: String, collectionId: String): List<IndexedFace> {

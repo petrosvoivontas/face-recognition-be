@@ -3,15 +3,14 @@ package com.example
 import aws.sdk.kotlin.services.rekognition.RekognitionClient
 import aws.sdk.kotlin.services.rekognition.listFaces
 import aws.sdk.kotlin.services.rekognition.searchFaces
+import kotlinx.coroutines.delay
 import com.example.model.Person
 import com.example.model.Thumbnail
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
 import java.util.*
-
-@Serializable
-data class CategorizationProgress(val processed: Int, val total: Int)
+import kotlin.time.Duration.Companion.milliseconds
 
 class CategorizePhotosUseCase(
     private val rekognitionClient: RekognitionClient
@@ -31,6 +30,8 @@ class CategorizePhotosUseCase(
         val people = arrayListOf<Person>()
         val processFaceIds = hashSetOf<String>()
         var processed = 0
+        var requestCount = 0
+        var windowStart = System.currentTimeMillis()
 
         for (face in faces) {
             val currentFaceId = face.faceId ?: continue
@@ -41,10 +42,19 @@ class CategorizePhotosUseCase(
                 emit(CategorizationEvent.Progress(processed, total))
                 continue
             }
+            if (requestCount >= RekognitionConstants.SEARCH_FACES_TPS) {
+                val elapsed = System.currentTimeMillis() - windowStart
+                if (elapsed < RekognitionConstants.QUOTA_WINDOW_MS) {
+                    delay((RekognitionConstants.QUOTA_WINDOW_MS - elapsed).milliseconds)
+                }
+                windowStart = System.currentTimeMillis()
+                requestCount = 0
+            }
             val searchFacesResponse = rekognitionClient.searchFaces {
                 this.collectionId = collectionId
                 faceId = currentFaceId
             }
+            requestCount++
 
             val faceIds = arrayListOf(currentFaceId)
             val images = hashSetOf(face.externalImageId ?: "")
