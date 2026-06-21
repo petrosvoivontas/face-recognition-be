@@ -40,6 +40,15 @@ suspend fun Application.configureRouting() {
     rekognition.initialize()
 
     routing {
+        get("/health") {
+            val statusCode = if (rekognition.isHealthy() && firestoreService.isHealthy()) {
+                HttpStatusCode.OK
+            } else {
+                HttpStatusCode.ServiceUnavailable
+            }
+            call.respond(statusCode)
+        }
+
         get("/collections") {
             call.respond(rekognition.listCollections(firestoreService))
         }

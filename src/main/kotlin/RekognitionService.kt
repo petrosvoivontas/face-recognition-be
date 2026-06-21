@@ -1,6 +1,5 @@
 package com.example
 
-import aws.sdk.kotlin.runtime.auth.credentials.ProfileCredentialsProvider
 import aws.sdk.kotlin.services.rekognition.RekognitionClient
 import aws.sdk.kotlin.services.rekognition.createCollection
 import aws.sdk.kotlin.services.rekognition.indexFaces
@@ -11,16 +10,26 @@ import kotlin.time.Duration.Companion.milliseconds
 
 const val PROFILE_NAME = "AdministratorAccess-411055095438"
 
-class RekognitionService {
-    private lateinit var client: RekognitionClient
+class RekognitionService : HealthCheck {
+
+    companion object {
+        private var INSTANCE: RekognitionClient? = null
+
+        val client: RekognitionClient
+            get() = INSTANCE!!
+    }
 
     private val categorizePhotosUseCase by lazy { CategorizePhotosUseCase(client) }
+
+    override fun isHealthy(): Boolean {
+        return INSTANCE != null
+    }
 
     suspend fun initialize() {
 //        client = RekognitionClient.fromEnvironment {
 //            this.credentialsProvider = ProfileCredentialsProvider(profileName = PROFILE_NAME)
 //        }
-        client = RekognitionClient { region = "eu-central-1" }
+        INSTANCE = RekognitionClient { region = "eu-central-1" }
     }
 
     suspend fun createCollection(collectionId: String): Int {
@@ -35,7 +44,8 @@ class RekognitionService {
             val batchStart = System.currentTimeMillis()
             batch.forEach { id ->
                 val isComplete = firestoreService.hasCategorizationDocuments(id)
-                val imagesCount = client.listFaces { this.collectionId = id }.faces?.groupBy { it.externalImageId }?.size ?: 0
+                val imagesCount =
+                    client.listFaces { this.collectionId = id }.faces?.groupBy { it.externalImageId }?.size ?: 0
                 val status = when {
                     isComplete -> CollectionStatus.COMPLETE
                     imagesCount == 0 -> CollectionStatus.EMPTY

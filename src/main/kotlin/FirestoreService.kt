@@ -15,9 +15,7 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
-class FirestoreService {
-
-    private val firestore: Firestore
+class FirestoreService : HealthCheck {
 
     init {
         if (FirebaseApp.getApps().isEmpty()) {
@@ -29,15 +27,23 @@ class FirestoreService {
                 .build()
             FirebaseApp.initializeApp(options)
         }
-        firestore = FirestoreClient.getFirestore()
+        INSTANCE = FirestoreClient.getFirestore()
     }
 
     companion object {
+        private var INSTANCE: Firestore? = null
+        val firestore: Firestore
+            get() = INSTANCE!!
+
         private const val COLLECTION_PATH = "categorizations"
 
         private const val FIELD_COLLECTION_ID = "collectionId"
         private const val FIELD_PEOPLE = "people"
         private const val FIELD_TIMESTAMP = "timestamp"
+    }
+
+    override fun isHealthy(): Boolean {
+        return INSTANCE != null
     }
 
     suspend fun hasCategorizationDocuments(collectionId: String): Boolean {
