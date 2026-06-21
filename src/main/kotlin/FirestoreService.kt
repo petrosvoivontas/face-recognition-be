@@ -22,8 +22,8 @@ class FirestoreService {
     init {
         if (FirebaseApp.getApps().isEmpty()) {
             val serviceAccount = FirestoreService::class.java.classLoader
-                .getResourceAsStream("firebase-adminsdk.json")
-                ?: error("firebase-adminsdk.json not found in resources")
+                .getResourceAsStream("faceme-prod-adminsdk.json")
+                ?: error("faceme-prod-adminsdk.json not found in resources")
             val options = FirebaseOptions.builder()
                 .setCredentials(GoogleCredentials.fromStream(serviceAccount))
                 .build()
