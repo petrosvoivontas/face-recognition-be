@@ -7,6 +7,7 @@ import aws.sdk.kotlin.services.rekognition.deleteCollection
 import aws.sdk.kotlin.services.rekognition.indexFaces
 import aws.sdk.kotlin.services.rekognition.listFaces
 import aws.sdk.kotlin.services.rekognition.model.Image
+import aws.sdk.kotlin.services.rekognition.model.QualityFilter
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -73,6 +74,7 @@ class RekognitionService : HealthCheck {
             this.collectionId = collectionId
             image = Image { bytes = imageBytes }
             externalImageId = imageFilename
+            this.qualityFilter = QualityFilter.High
         }
         return response.faceRecords?.mapNotNull { record ->
             record.face?.let { face ->
