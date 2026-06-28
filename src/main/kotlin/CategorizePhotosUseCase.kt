@@ -20,7 +20,7 @@ class CategorizePhotosUseCase(
         val response = rekognitionClient.listFaces {
             this.collectionId = collectionId
         }
-        val faces = response.faces ?: run {
+        val faces = response.faces?.sortedBy { it.confidence ?: 0f } ?: run {
             emit(CategorizationEvent.Complete(emptyList()))
             return@flow
         }
