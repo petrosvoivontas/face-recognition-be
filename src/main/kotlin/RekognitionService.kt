@@ -9,6 +9,7 @@ import aws.sdk.kotlin.services.rekognition.listFaces
 import aws.sdk.kotlin.services.rekognition.model.Image
 import aws.sdk.kotlin.services.rekognition.model.QualityFilter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlin.time.Duration.Companion.milliseconds
 
 const val PROFILE_NAME = "AdministratorAccess-411055095438"
@@ -69,7 +70,12 @@ class RekognitionService : HealthCheck {
         return results
     }
 
-    suspend fun indexFaces(imageBytes: ByteArray, imageFilename: String, collectionId: String): List<IndexedFace> {
+    suspend fun indexFaces(
+        firestoreService: FirestoreService,
+        imageBytes: ByteArray,
+        imageFilename: String,
+        collectionId: String
+    ): List<IndexedFace> {
         val response = client.indexFaces {
             this.collectionId = collectionId
             image = Image { bytes = imageBytes }
@@ -77,15 +83,23 @@ class RekognitionService : HealthCheck {
             this.qualityFilter = QualityFilter.High
         }
         return response.faceRecords?.mapNotNull { record ->
-            record.face?.let { face ->
-                IndexedFace(
-                    faceId = face.faceId,
-                    externalImageId = face.externalImageId,
-                    confidence = face.confidence
+            val face = record.face ?: return@mapNotNull null
+            record.faceDetail?.pose?.let { pose ->
+                firestoreService.saveFaceDetails(
+                    collectionId,
+                    face.faceId ?: "",
+                    pose
                 )
             }
+            IndexedFace(
+                faceId = face.faceId,
+                externalImageId = face.externalImageId,
+                confidence = face.confidence
+            )
         } ?: emptyList()
     }
 
-    fun categorizePhotos(collectionId: String) = categorizePhotosUseCase.categorizeInCollection(collectionId)
+    fun categorizePhotos(firestoreService: FirestoreService, collectionId: String): Flow<CategorizationEvent> {
+        return categorizePhotosUseCase.categorizeInCollection(firestoreService, collectionId)
+    }
 }

@@ -16,7 +16,7 @@ class CategorizePhotosUseCase(
     private val rekognitionClient: RekognitionClient
 ) {
 
-    fun categorizeInCollection(collectionId: String): Flow<CategorizationEvent> = flow {
+    fun categorizeInCollection(firestoreService: FirestoreService, collectionId: String): Flow<CategorizationEvent> = flow {
         val response = rekognitionClient.listFaces {
             this.collectionId = collectionId
         }
@@ -35,8 +35,8 @@ class CategorizePhotosUseCase(
 
         for (face in faces) {
             val currentFaceId = face.faceId ?: continue
-            val currentFaceExternalImageId = face.externalImageId ?: continue
-            val currentFaceBoundingBox = face.boundingBox ?: continue
+            var thumbnailExternalImageId = face.externalImageId ?: continue
+            var thumbnailBoundingBox = face.boundingBox ?: continue
             if (currentFaceId in processFaceIds) {
                 processed++
                 emit(CategorizationEvent.Progress(processed, total))
@@ -66,13 +66,25 @@ class CategorizePhotosUseCase(
 
             processFaceIds.addAll(faceIds)
 
+            val personId = UUID.randomUUID().toString()
+
+            firestoreService.assignFaceDetailsToPerson(faceIds, personId)
+
+            val faceIdForThumbnail = firestoreService.getFaceForThumbnail(collectionId, personId)
+
+            val faceForThumbnail = searchFacesResponse.faceMatches?.find { it.face?.faceId == faceIdForThumbnail }
+                ?.face
+
+            faceForThumbnail?.externalImageId?.let { thumbnailExternalImageId = it }
+            faceForThumbnail?.boundingBox?.let { thumbnailBoundingBox = it }
+
             val person = Person(
-                id = UUID.randomUUID().toString(),
+                id = personId,
                 faceIds = faceIds,
                 images = images.toList(),
                 thumbnail = Thumbnail(
-                    imageFilename = currentFaceExternalImageId,
-                    boundingBox = currentFaceBoundingBox
+                    imageFilename = thumbnailExternalImageId,
+                    boundingBox = thumbnailBoundingBox
                 )
             )
             people.add(person)

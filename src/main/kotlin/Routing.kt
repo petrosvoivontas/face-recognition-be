@@ -102,7 +102,7 @@ suspend fun Application.configureRouting() {
                 imageFilename ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing image filename")
             val collection = collectionId ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing collectionId")
 
-            val faces = rekognition.indexFaces(bytes, filename, collection)
+            val faces = rekognition.indexFaces(firestoreService, bytes, filename, collection)
             call.respond(faces)
         }
 
@@ -114,7 +114,7 @@ suspend fun Application.configureRouting() {
             call.response.headers.append(HttpHeaders.Connection, "keep-alive")
 
             call.respondBytesWriter {
-                rekognition.categorizePhotos(request.collectionId).collect { event ->
+                rekognition.categorizePhotos(firestoreService, request.collectionId).collect { event ->
                     when (event) {
                         is CategorizationEvent.Progress -> {
                             writeStringUtf8("event: progress\n")
