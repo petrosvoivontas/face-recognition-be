@@ -59,6 +59,7 @@ class FirestoreService : HealthCheck {
 
         private const val CATEGORIZATIONS_COLLECTION_PATH = "categorizations"
         private const val FACE_DETAILS_COLLECTION_PATH = "faceDetails"
+        private const val COLLECTIONS_COLLECTION_PATH = "collections"
 
         private const val FIELD_COLLECTION_ID = "collectionId"
         private const val FIELD_PEOPLE = "people"
@@ -67,6 +68,10 @@ class FirestoreService : HealthCheck {
         private const val FIELD_POSE = "pose"
         private const val FIELD_POSE_EUCLIDEAN_DISTANCE = "euclideanDistance"
         private const val FIELD_PERSON_ID = "personId"
+
+        private const val FIELD_OWNER_ID = "ownerId"
+        private const val FIELD_DISPLAY_NAME = "displayName"
+        private const val FIELD_CREATED_AT = "createdAt"
     }
 
     override fun isHealthy(): Boolean {
@@ -117,13 +122,14 @@ class FirestoreService : HealthCheck {
         }
     }
 
-    suspend fun saveCategorizationResult(collectionId: String, people: List<Person>) {
+    suspend fun saveCategorizationResult(collectionId: String, ownerId: String, people: List<Person>) {
         withContext(Dispatchers.IO) {
             val datetime = ZonedDateTime.now(ZoneOffset.UTC)
                 .format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
             val documentId = "$collectionId-$datetime"
             val document = mapOf(
                 FIELD_COLLECTION_ID to collectionId,
+                FIELD_OWNER_ID to ownerId,
                 FIELD_PEOPLE to people.map { person ->
                     mapOf(
                         "id" to person.id,
@@ -151,7 +157,7 @@ class FirestoreService : HealthCheck {
         }
     }
 
-    suspend fun saveFaceDetails(collectionId: String, faceId: String, pose: Pose) {
+    suspend fun saveFaceDetails(collectionId: String, ownerId: String, faceId: String, pose: Pose) {
         withContext(Dispatchers.IO) {
             val poseField = try {
                 FirestorePose(pose)
@@ -160,6 +166,7 @@ class FirestoreService : HealthCheck {
             }
             val document = mapOf(
                 FIELD_COLLECTION_ID to collectionId,
+                FIELD_OWNER_ID to ownerId,
                 FIELD_POSE to poseField
             )
 
@@ -206,6 +213,52 @@ class FirestoreService : HealthCheck {
                 .get()
 
             snapshot.documents.firstOrNull()?.id
+        }
+    }
+
+    suspend fun createCollectionMeta(id: String, ownerId: String, displayName: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            val docRef = firestore.collection(COLLECTIONS_COLLECTION_PATH).document(id)
+            firestore.runTransaction { tx ->
+                if (tx.get(docRef).get().exists()) {
+                    false
+                } else {
+                    tx.set(
+                        docRef,
+                        mapOf(
+                            FIELD_OWNER_ID to ownerId,
+                            FIELD_DISPLAY_NAME to displayName,
+                            FIELD_CREATED_AT to FieldValue.serverTimestamp()
+                        )
+                    )
+                    true
+                }
+            }.get()
+        }
+    }
+
+    suspend fun getCollectionOwner(id: String): String? {
+        return withContext(Dispatchers.IO) {
+            firestore.collection(COLLECTIONS_COLLECTION_PATH).document(id).get().get()
+                .getString(FIELD_OWNER_ID)
+        }
+    }
+
+    suspend fun listCollectionsForOwner(ownerId: String): Map<String, String> {
+        return withContext(Dispatchers.IO) {
+            val snapshot = firestore.collection(COLLECTIONS_COLLECTION_PATH)
+                .whereEqualTo(FIELD_OWNER_ID, ownerId)
+                .get()
+                .get()
+            snapshot.documents.associate { doc ->
+                doc.id to (doc.getString(FIELD_DISPLAY_NAME) ?: doc.id)
+            }
+        }
+    }
+
+    suspend fun deleteCollectionMeta(id: String) {
+        withContext(Dispatchers.IO) {
+            firestore.collection(COLLECTIONS_COLLECTION_PATH).document(id).delete().get()
         }
     }
 }

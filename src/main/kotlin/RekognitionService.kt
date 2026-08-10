@@ -30,10 +30,10 @@ class RekognitionService : HealthCheck {
     }
 
     suspend fun initialize() {
-//        client = RekognitionClient.fromEnvironment {
-//            this.credentialsProvider = ProfileCredentialsProvider(profileName = PROFILE_NAME)
-//        }
-        INSTANCE = RekognitionClient { region = "eu-central-1" }
+        INSTANCE = RekognitionClient.fromEnvironment {
+            this.credentialsProvider = ProfileCredentialsProvider(profileName = PROFILE_NAME)
+        }
+//        INSTANCE = RekognitionClient { region = "eu-central-1" }
     }
 
     suspend fun createCollection(collectionId: String): Int {
@@ -46,12 +46,11 @@ class RekognitionService : HealthCheck {
         return response.statusCode ?: 500
     }
 
-    suspend fun listCollections(firestoreService: FirestoreService): List<CollectionInfo> {
-        val ids = client.listCollections().collectionIds ?: emptyList()
+    suspend fun listCollections(firestoreService: FirestoreService, ownedIds: Map<String, String>): List<CollectionInfo> {
         val results = mutableListOf<CollectionInfo>()
-        for (batch in ids.chunked(RekognitionConstants.LIST_FACES_TPS)) {
+        for (batch in ownedIds.entries.chunked(RekognitionConstants.LIST_FACES_TPS)) {
             val batchStart = System.currentTimeMillis()
-            batch.forEach { id ->
+            batch.forEach { (id, displayName) ->
                 val isComplete = firestoreService.hasCategorizationDocuments(id)
                 val imagesCount =
                     client.listFaces { this.collectionId = id }.faces?.groupBy { it.externalImageId }?.size ?: 0
@@ -60,7 +59,7 @@ class RekognitionService : HealthCheck {
                     imagesCount == 0 -> CollectionStatus.EMPTY
                     else -> CollectionStatus.IN_PROGRESS
                 }
-                results.add(CollectionInfo(id = id, imagesCount = imagesCount, status = status))
+                results.add(CollectionInfo(id = id, displayName = displayName, imagesCount = imagesCount, status = status))
             }
             val elapsed = System.currentTimeMillis() - batchStart
             if (elapsed < RekognitionConstants.QUOTA_WINDOW_MS) {
@@ -74,7 +73,8 @@ class RekognitionService : HealthCheck {
         firestoreService: FirestoreService,
         imageBytes: ByteArray,
         imageFilename: String,
-        collectionId: String
+        collectionId: String,
+        ownerId: String
     ): List<IndexedFace> {
         val response = client.indexFaces {
             this.collectionId = collectionId
@@ -87,6 +87,7 @@ class RekognitionService : HealthCheck {
             record.faceDetail?.pose?.let { pose ->
                 firestoreService.saveFaceDetails(
                     collectionId,
+                    ownerId,
                     face.faceId ?: "",
                     pose
                 )
