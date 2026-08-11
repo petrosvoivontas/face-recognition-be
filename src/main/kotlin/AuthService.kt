@@ -20,3 +20,16 @@ class FirebaseAuthService : AuthService {
         }
     }
 }
+
+data class FirebaseUserInfo(val email: String?, val displayName: String?)
+
+suspend fun lookupUserInfo(uid: String): FirebaseUserInfo? {
+    return withContext(Dispatchers.IO) {
+        try {
+            val user = FirebaseAuth.getInstance().getUser(uid)
+            FirebaseUserInfo(email = user.email, displayName = user.displayName)
+        } catch (_: Exception) {
+            null
+        }
+    }
+}

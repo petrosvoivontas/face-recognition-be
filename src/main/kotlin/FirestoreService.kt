@@ -60,6 +60,7 @@ class FirestoreService : HealthCheck {
         private const val CATEGORIZATIONS_COLLECTION_PATH = "categorizations"
         private const val FACE_DETAILS_COLLECTION_PATH = "faceDetails"
         private const val COLLECTIONS_COLLECTION_PATH = "collections"
+        private const val BILLING_PROFILES_COLLECTION_PATH = "billingProfiles"
 
         private const val FIELD_COLLECTION_ID = "collectionId"
         private const val FIELD_PEOPLE = "people"
@@ -72,6 +73,14 @@ class FirestoreService : HealthCheck {
         private const val FIELD_OWNER_ID = "ownerId"
         private const val FIELD_DISPLAY_NAME = "displayName"
         private const val FIELD_CREATED_AT = "createdAt"
+
+        private const val FIELD_STRIPE_CUSTOMER_ID = "stripeCustomerId"
+        private const val FIELD_STRIPE_SUBSCRIPTION_ID = "stripeSubscriptionId"
+        private const val FIELD_SUBSCRIPTION_STATUS = "subscriptionStatus"
+        private const val FIELD_EMAIL = "email"
+        private const val FIELD_UPDATED_AT = "updatedAt"
+        private const val FIELD_CARD_BRAND = "cardBrand"
+        private const val FIELD_CARD_LAST4 = "cardLast4"
     }
 
     override fun isHealthy(): Boolean {
@@ -122,8 +131,8 @@ class FirestoreService : HealthCheck {
         }
     }
 
-    suspend fun saveCategorizationResult(collectionId: String, ownerId: String, people: List<Person>) {
-        withContext(Dispatchers.IO) {
+    suspend fun saveCategorizationResult(collectionId: String, ownerId: String, people: List<Person>): String {
+        return withContext(Dispatchers.IO) {
             val datetime = ZonedDateTime.now(ZoneOffset.UTC)
                 .format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
             val documentId = "$collectionId-$datetime"
@@ -154,6 +163,7 @@ class FirestoreService : HealthCheck {
                 .document(documentId)
                 .set(document)
                 .get()
+            documentId
         }
     }
 
@@ -259,6 +269,99 @@ class FirestoreService : HealthCheck {
     suspend fun deleteCollectionMeta(id: String) {
         withContext(Dispatchers.IO) {
             firestore.collection(COLLECTIONS_COLLECTION_PATH).document(id).delete().get()
+        }
+    }
+
+    data class BillingProfile(
+        val stripeCustomerId: String?,
+        val stripeSubscriptionId: String?,
+        val subscriptionStatus: String?,
+        val cardBrand: String?,
+        val cardLast4: String?
+    )
+
+    suspend fun getBillingProfile(uid: String): BillingProfile? {
+        return withContext(Dispatchers.IO) {
+            val doc = firestore.collection(BILLING_PROFILES_COLLECTION_PATH).document(uid).get().get()
+            if (!doc.exists()) return@withContext null
+            BillingProfile(
+                stripeCustomerId = doc.getString(FIELD_STRIPE_CUSTOMER_ID),
+                stripeSubscriptionId = doc.getString(FIELD_STRIPE_SUBSCRIPTION_ID),
+                subscriptionStatus = doc.getString(FIELD_SUBSCRIPTION_STATUS),
+                cardBrand = doc.getString(FIELD_CARD_BRAND),
+                cardLast4 = doc.getString(FIELD_CARD_LAST4)
+            )
+        }
+    }
+
+    suspend fun saveStripeCustomerId(uid: String, stripeCustomerId: String, email: String?) {
+        withContext(Dispatchers.IO) {
+            val doc = mutableMapOf(
+                FIELD_STRIPE_CUSTOMER_ID to stripeCustomerId,
+                FIELD_UPDATED_AT to FieldValue.serverTimestamp()
+            )
+            if (email != null) doc[FIELD_EMAIL] = email
+            firestore.collection(BILLING_PROFILES_COLLECTION_PATH).document(uid)
+                .set(doc, com.google.cloud.firestore.SetOptions.merge())
+                .get()
+        }
+    }
+
+    suspend fun saveSubscription(uid: String, stripeSubscriptionId: String, status: String) {
+        withContext(Dispatchers.IO) {
+            firestore.collection(BILLING_PROFILES_COLLECTION_PATH).document(uid)
+                .set(
+                    mapOf(
+                        FIELD_STRIPE_SUBSCRIPTION_ID to stripeSubscriptionId,
+                        FIELD_SUBSCRIPTION_STATUS to status,
+                        FIELD_UPDATED_AT to FieldValue.serverTimestamp()
+                    ),
+                    com.google.cloud.firestore.SetOptions.merge()
+                )
+                .get()
+        }
+    }
+
+    suspend fun savePaymentMethodSummary(uid: String, brand: String?, last4: String?) {
+        withContext(Dispatchers.IO) {
+            val doc = mutableMapOf<String, Any>(FIELD_UPDATED_AT to FieldValue.serverTimestamp())
+            if (brand != null) doc[FIELD_CARD_BRAND] = brand
+            if (last4 != null) doc[FIELD_CARD_LAST4] = last4
+            firestore.collection(BILLING_PROFILES_COLLECTION_PATH).document(uid)
+                .set(doc, com.google.cloud.firestore.SetOptions.merge())
+                .get()
+        }
+    }
+
+    suspend fun updateSubscriptionStatus(uid: String, status: String) {
+        withContext(Dispatchers.IO) {
+            firestore.collection(BILLING_PROFILES_COLLECTION_PATH).document(uid)
+                .set(
+                    mapOf(
+                        FIELD_SUBSCRIPTION_STATUS to status,
+                        FIELD_UPDATED_AT to FieldValue.serverTimestamp()
+                    ),
+                    com.google.cloud.firestore.SetOptions.merge()
+                )
+                .get()
+        }
+    }
+
+    suspend fun updateSubscriptionStatusByCustomerId(stripeCustomerId: String, status: String) {
+        withContext(Dispatchers.IO) {
+            val snapshot = firestore.collection(BILLING_PROFILES_COLLECTION_PATH)
+                .whereEqualTo(FIELD_STRIPE_CUSTOMER_ID, stripeCustomerId)
+                .limit(1)
+                .get()
+                .get()
+            val doc = snapshot.documents.firstOrNull() ?: return@withContext
+            doc.reference.set(
+                mapOf(
+                    FIELD_SUBSCRIPTION_STATUS to status,
+                    FIELD_UPDATED_AT to FieldValue.serverTimestamp()
+                ),
+                com.google.cloud.firestore.SetOptions.merge()
+            ).get()
         }
     }
 }

@@ -3,11 +3,13 @@ kotlin = "2.3.21"
 logback = "1.5.34"
 aws-kotlin-sdk = "1.4.0"
 firebase-admin = "9.4.2"
+stripe-java = "33.1.1"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 aws-rekognition = { module = "aws.sdk.kotlin:rekognition", version.ref = "aws-kotlin-sdk" }
 firebase-admin = { module = "com.google.firebase:firebase-admin", version.ref = "firebase-admin" }
+stripe-java = { module = "com.stripe:stripe-java", version.ref = "stripe-java" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
