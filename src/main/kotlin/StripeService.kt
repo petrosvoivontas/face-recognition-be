@@ -31,6 +31,7 @@ class StripeService(private val firestoreService: FirestoreService) {
                 .putMetadata("firebaseUid", uid)
                 .apply { email?.let { setEmail(it) } }
                 .apply { name?.let { setName(it) } }
+                .addPreferredLocale("el-GR")
                 .build()
             val customer = Customer.create(params)
             firestoreService.saveStripeCustomerId(uid, customer.id, email)
