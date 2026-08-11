@@ -20,3 +20,13 @@ class FirebaseAuthService : AuthService {
         }
     }
 }
+
+suspend fun lookupEmail(uid: String): String? {
+    return withContext(Dispatchers.IO) {
+        try {
+            FirebaseAuth.getInstance().getUser(uid).email
+        } catch (_: Exception) {
+            null
+        }
+    }
+}

@@ -41,6 +41,20 @@ data class CreateCollectionRequest(val displayName: String)
 @Serializable
 data class ErrorResponse(val message: String)
 
+@Serializable
+data class SetupIntentResponse(val clientSecret: String)
+
+@Serializable
+data class SubscribeRequest(val paymentMethodId: String)
+
+@Serializable
+data class SubscribeResponse(val status: String)
+
+@Serializable
+data class BillingStatusResponse(val hasActiveSubscription: Boolean, val status: String?)
+
+private val ACTIVE_SUBSCRIPTION_STATUSES = setOf("active", "trialing")
+
 private val COLLECTION_ID_CHARSET = Regex("[^a-zA-Z0-9_.\\-]")
 
 private fun slugify(input: String): String {
@@ -71,9 +85,19 @@ private suspend fun ApplicationCall.requireOwnedCollection(
     return true
 }
 
+private suspend fun ApplicationCall.requireActiveSubscription(firestoreService: FirestoreService, uid: String): Boolean {
+    val status = firestoreService.getBillingProfile(uid)?.subscriptionStatus
+    if (status !in ACTIVE_SUBSCRIPTION_STATUSES) {
+        respond(HttpStatusCode.PaymentRequired, ErrorResponse("An active subscription is required."))
+        return false
+    }
+    return true
+}
+
 suspend fun Application.configureRouting(authService: AuthService = FirebaseAuthService()) {
     val rekognition = RekognitionService()
     val firestoreService = FirestoreService()
+    val stripeService = StripeService(firestoreService)
 
     rekognition.initialize()
 
@@ -104,6 +128,7 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
 
         post("/collections") {
             val uid = call.requireUid(authService) ?: return@post
+            if (!call.requireActiveSubscription(firestoreService, uid)) return@post
             val request = call.receive<CreateCollectionRequest>()
             val displayName = request.displayName.trim()
             if (displayName.isEmpty()) {
@@ -153,6 +178,7 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
 
         post("/indexFaces") {
             val uid = call.requireUid(authService) ?: return@post
+            if (!call.requireActiveSubscription(firestoreService, uid)) return@post
 
             val multipart = call.receiveMultipart()
             var imageBytes: ByteArray? = null
@@ -187,6 +213,7 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
 
         post("/categorize") {
             val uid = call.requireUid(authService) ?: return@post
+            if (!call.requireActiveSubscription(firestoreService, uid)) return@post
             val request = call.receive<CategorizeRequest>()
             if (!call.requireOwnedCollection(firestoreService, uid, request.collectionId)) return@post
 
@@ -210,7 +237,18 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
                         }
 
                         is CategorizationEvent.Complete -> {
-                            firestoreService.saveCategorizationResult(request.collectionId, uid, event.people)
+                            val documentId = firestoreService.saveCategorizationResult(request.collectionId, uid, event.people)
+                            try {
+                                val imagesProcessed = event.people.flatMap { it.images }.distinct().size
+                                if (imagesProcessed > 0) {
+                                    val customerId = firestoreService.getBillingProfile(uid)?.stripeCustomerId
+                                    if (customerId != null) {
+                                        stripeService.reportUsage(customerId, imagesProcessed, documentId)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                call.application.environment.log.error("Failed to report Stripe usage for $documentId", e)
+                            }
                             writeStringUtf8("event: complete\n")
                             writeStringUtf8(
                                 "data: ${
@@ -225,6 +263,38 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
                     flush()
                 }
             }
+        }
+
+        post("/billing/setup-intent") {
+            val uid = call.requireUid(authService) ?: return@post
+            val email = lookupEmail(uid)
+            val customerId = stripeService.getOrCreateCustomer(uid, email)
+            val clientSecret = stripeService.createSetupIntent(customerId)
+            call.respond(SetupIntentResponse(clientSecret))
+        }
+
+        post("/billing/subscribe") {
+            val uid = call.requireUid(authService) ?: return@post
+            val request = call.receive<SubscribeRequest>()
+            val customerId = firestoreService.getBillingProfile(uid)?.stripeCustomerId
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No Stripe customer on file. Call /billing/setup-intent first."))
+            val subscription = stripeService.attachPaymentMethodAndSubscribe(uid, customerId, request.paymentMethodId)
+            call.respond(SubscribeResponse(subscription.status))
+        }
+
+        get("/billing/status") {
+            val uid = call.requireUid(authService) ?: return@get
+            val profile = firestoreService.getBillingProfile(uid)
+            val status = profile?.subscriptionStatus
+            call.respond(BillingStatusResponse(hasActiveSubscription = status in ACTIVE_SUBSCRIPTION_STATUSES, status = status))
+        }
+
+        post("/webhooks/stripe") {
+            val payload = call.receiveText()
+            val sigHeader = call.request.headers["Stripe-Signature"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing Stripe-Signature header")
+            val verified = stripeService.handleWebhookEvent(payload, sigHeader)
+            call.respond(if (verified) HttpStatusCode.OK else HttpStatusCode.BadRequest)
         }
     }
 }

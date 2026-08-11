@@ -29,6 +29,7 @@ dependencies {
     implementation(libs.logback.classic)
     implementation(libs.aws.rekognition)
     implementation(libs.firebase.admin)
+    implementation(libs.stripe.java)
 
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)
