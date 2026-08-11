@@ -51,7 +51,18 @@ data class SubscribeRequest(val paymentMethodId: String)
 data class SubscribeResponse(val status: String)
 
 @Serializable
-data class BillingStatusResponse(val hasActiveSubscription: Boolean, val status: String?)
+data class BillingStatusResponse(
+    val hasActiveSubscription: Boolean,
+    val status: String?,
+    val cardBrand: String? = null,
+    val cardLast4: String? = null
+)
+
+@Serializable
+data class UpdatePaymentMethodRequest(val paymentMethodId: String)
+
+@Serializable
+data class PaymentMethodResponse(val brand: String?, val last4: String?)
 
 private val ACTIVE_SUBSCRIPTION_STATUSES = setOf("active", "trialing")
 
@@ -267,8 +278,8 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
 
         post("/billing/setup-intent") {
             val uid = call.requireUid(authService) ?: return@post
-            val email = lookupEmail(uid)
-            val customerId = stripeService.getOrCreateCustomer(uid, email)
+            val userInfo = lookupUserInfo(uid)
+            val customerId = stripeService.getOrCreateCustomer(uid, userInfo?.email, userInfo?.displayName)
             val clientSecret = stripeService.createSetupIntent(customerId)
             call.respond(SetupIntentResponse(clientSecret))
         }
@@ -286,7 +297,37 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
             val uid = call.requireUid(authService) ?: return@get
             val profile = firestoreService.getBillingProfile(uid)
             val status = profile?.subscriptionStatus
-            call.respond(BillingStatusResponse(hasActiveSubscription = status in ACTIVE_SUBSCRIPTION_STATUSES, status = status))
+            call.respond(
+                BillingStatusResponse(
+                    hasActiveSubscription = status in ACTIVE_SUBSCRIPTION_STATUSES,
+                    status = status,
+                    cardBrand = profile?.cardBrand,
+                    cardLast4 = profile?.cardLast4
+                )
+            )
+        }
+
+        post("/billing/update-payment-method") {
+            val uid = call.requireUid(authService) ?: return@post
+            val request = call.receive<UpdatePaymentMethodRequest>()
+            val profile = firestoreService.getBillingProfile(uid)
+            val customerId = profile?.stripeCustomerId
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No Stripe customer on file."))
+            val paymentMethod = stripeService.updatePaymentMethod(uid, customerId, profile.stripeSubscriptionId, request.paymentMethodId)
+            call.respond(PaymentMethodResponse(paymentMethod.card?.brand, paymentMethod.card?.last4))
+        }
+
+        post("/billing/cancel-subscription") {
+            val uid = call.requireUid(authService) ?: return@post
+            val subscriptionId = firestoreService.getBillingProfile(uid)?.stripeSubscriptionId
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No subscription to cancel."))
+            val subscription = stripeService.cancelSubscription(uid, subscriptionId)
+            call.respond(
+                BillingStatusResponse(
+                    hasActiveSubscription = subscription.status in ACTIVE_SUBSCRIPTION_STATUSES,
+                    status = subscription.status
+                )
+            )
         }
 
         post("/webhooks/stripe") {

@@ -21,10 +21,13 @@ class FirebaseAuthService : AuthService {
     }
 }
 
-suspend fun lookupEmail(uid: String): String? {
+data class FirebaseUserInfo(val email: String?, val displayName: String?)
+
+suspend fun lookupUserInfo(uid: String): FirebaseUserInfo? {
     return withContext(Dispatchers.IO) {
         try {
-            FirebaseAuth.getInstance().getUser(uid).email
+            val user = FirebaseAuth.getInstance().getUser(uid)
+            FirebaseUserInfo(email = user.email, displayName = user.displayName)
         } catch (_: Exception) {
             null
         }
