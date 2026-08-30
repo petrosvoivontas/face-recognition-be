@@ -61,6 +61,10 @@ class FirestoreService : HealthCheck {
         private const val FACE_DETAILS_COLLECTION_PATH = "faceDetails"
         private const val COLLECTIONS_COLLECTION_PATH = "collections"
         private const val BILLING_PROFILES_COLLECTION_PATH = "billingProfiles"
+        private const val ACCOUNTS_COLLECTION_PATH = "accounts"
+
+        private const val FIELD_UID = "uid"
+        private const val FIELD_STATE = "state"
 
         private const val FIELD_COLLECTION_ID = "collectionId"
         private const val FIELD_PEOPLE = "people"
@@ -269,6 +273,18 @@ class FirestoreService : HealthCheck {
     suspend fun deleteCollectionMeta(id: String) {
         withContext(Dispatchers.IO) {
             firestore.collection(COLLECTIONS_COLLECTION_PATH).document(id).delete().get()
+        }
+    }
+
+    suspend fun getAccountState(uid: String): AccountState {
+        return withContext(Dispatchers.IO) {
+            val snapshot = firestore.collection(ACCOUNTS_COLLECTION_PATH)
+                .whereEqualTo(FIELD_UID, uid)
+                .limit(1)
+                .get()
+                .get()
+            val state = snapshot.documents.firstOrNull()?.getString(FIELD_STATE)
+            AccountState.entries.find { it.value == state } ?: AccountState.PENDING_ACTIVATION
         }
     }
 
