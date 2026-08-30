@@ -64,6 +64,15 @@ data class UpdatePaymentMethodRequest(val paymentMethodId: String)
 @Serializable
 data class PaymentMethodResponse(val brand: String?, val last4: String?)
 
+@Serializable
+enum class AccountState(val value: String) {
+    PENDING_ACTIVATION("PENDING_ACTIVATION"),
+    ACTIVE("ACTIVE")
+}
+
+@Serializable
+data class AccountStateResponse(val state: AccountState)
+
 private val ACTIVE_SUBSCRIPTION_STATUSES = setOf("active", "trialing")
 
 private val COLLECTION_ID_CHARSET = Regex("[^a-zA-Z0-9_.\\-]")
@@ -120,6 +129,16 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
                 HttpStatusCode.ServiceUnavailable
             }
             call.respond(statusCode)
+        }
+
+        get("/state/{uid}") {
+            val authUid = call.requireUid(authService) ?: return@get
+            val requestedUid = call.parameters["uid"]
+            if (requestedUid != authUid) {
+                return@get call.respond(HttpStatusCode.Forbidden)
+            }
+            val state = firestoreService.getAccountState(authUid)
+            call.respond(AccountStateResponse(state))
         }
 
         get("/collections") {
