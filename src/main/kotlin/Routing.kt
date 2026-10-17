@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.model.getLogger
 import io.ktor.http.*
 import io.ktor.http.content.*
 import io.ktor.server.application.*
@@ -277,7 +278,7 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
                                     }
                                 }
                             } catch (e: Exception) {
-                                call.application.environment.log.error("Failed to report Stripe usage for $documentId", e)
+                                getLogger().error("Failed to report Stripe usage for $documentId", e)
                             }
                             writeStringUtf8("event: complete\n")
                             writeStringUtf8(
