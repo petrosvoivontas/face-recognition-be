@@ -13,10 +13,14 @@ import com.stripe.param.SetupIntentCreateParams
 import com.stripe.param.SubscriptionCreateParams
 import com.stripe.param.SubscriptionUpdateParams
 import com.stripe.param.billing.MeterEventCreateParams
+import io.ktor.util.logging.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class StripeService(private val firestoreService: FirestoreService) {
+class StripeService(
+    private val firestoreService: FirestoreService,
+    private val logger: Logger
+) {
 
     init {
         com.stripe.Stripe.apiKey = StripeConfig.secretKey
@@ -25,7 +29,10 @@ class StripeService(private val firestoreService: FirestoreService) {
     suspend fun getOrCreateCustomer(uid: String, email: String?, name: String?): String {
         return withContext(Dispatchers.IO) {
             val existing = firestoreService.getBillingProfile(uid)?.stripeCustomerId
-            if (existing != null) return@withContext existing
+            if (existing != null) {
+                logger.debug("found existing Stripe customer id=$existing")
+                return@withContext existing
+            }
 
             val params = CustomerCreateParams.builder()
                 .putMetadata("firebaseUid", uid)
@@ -35,6 +42,7 @@ class StripeService(private val firestoreService: FirestoreService) {
                 .build()
             val customer = Customer.create(params)
             firestoreService.saveStripeCustomerId(uid, customer.id, email)
+            logger.debug("created new Stripe customer id=${customer.id}")
             customer.id
         }
     }

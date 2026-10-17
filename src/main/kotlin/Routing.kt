@@ -118,7 +118,7 @@ private suspend fun ApplicationCall.requireActiveSubscription(firestoreService: 
 suspend fun Application.configureRouting(authService: AuthService = FirebaseAuthService()) {
     val rekognition = RekognitionService()
     val firestoreService = FirestoreService()
-    val stripeService = StripeService(firestoreService)
+    val stripeService = StripeService(firestoreService, getLogger())
 
     rekognition.initialize()
 
