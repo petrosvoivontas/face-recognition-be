@@ -19,12 +19,9 @@ import kotlinx.coroutines.withContext
 
 class StripeService(
     private val firestoreService: FirestoreService,
+    private val stripeSecrets: StripeParamsProvider,
     private val logger: Logger
 ) {
-
-    init {
-        com.stripe.Stripe.apiKey = StripeConfig.secretKey
-    }
 
     suspend fun getOrCreateCustomer(uid: String, email: String?, name: String?): String {
         return withContext(Dispatchers.IO) {
@@ -131,7 +128,7 @@ class StripeService(
     suspend fun reportUsage(customerId: String, quantity: Int, idempotencyKey: String) {
         withContext(Dispatchers.IO) {
             val params = MeterEventCreateParams.builder()
-                .setEventName(StripeConfig.meterEventName)
+                .setEventName(StripeParamsProvider.meterEventName)
                 .setIdentifier(idempotencyKey)
                 .putPayload("value", quantity.toString())
                 .putPayload("stripe_customer_id", customerId)
@@ -142,11 +139,15 @@ class StripeService(
 
     suspend fun handleWebhookEvent(payload: String, sigHeader: String): Boolean {
         return withContext(Dispatchers.IO) {
-            val event = try {
-                Webhook.constructEvent(payload, sigHeader, StripeConfig.webhookSecret)
-            } catch (_: SignatureVerificationException) {
-                return@withContext false
-            }
+            // Try each cached webhook secret (current, then previous) so events signed during
+            // a Stripe-side secret rotation still verify.
+            val event = stripeSecrets.webhookSecrets.firstNotNullOfOrNull { secret ->
+                try {
+                    Webhook.constructEvent(payload, sigHeader, secret)
+                } catch (_: SignatureVerificationException) {
+                    null
+                }
+            } ?: return@withContext false
 
             when (event.type) {
                 "customer.subscription.created",

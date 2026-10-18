@@ -118,13 +118,16 @@ private suspend fun ApplicationCall.requireActiveSubscription(firestoreService: 
 suspend fun Application.configureRouting(authService: AuthService = FirebaseAuthService()) {
     val rekognition = RekognitionService()
     val firestoreService = FirestoreService()
-    val stripeService = StripeService(firestoreService, getLogger())
+    val stripeSecrets = StripeParamsProvider(getLogger())
+    val stripeService = StripeService(firestoreService, stripeSecrets, getLogger())
 
     rekognition.initialize()
+    stripeSecrets.initialize(this)
+    monitor.subscribe(ApplicationStopping) { stripeSecrets.shutdown() }
 
     routing {
         get("/health") {
-            val statusCode = if (rekognition.isHealthy() && firestoreService.isHealthy()) {
+            val statusCode = if (rekognition.isHealthy() && firestoreService.isHealthy() && stripeSecrets.isHealthy()) {
                 HttpStatusCode.OK
             } else {
                 HttpStatusCode.ServiceUnavailable
