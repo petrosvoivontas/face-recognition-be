@@ -1,8 +1,7 @@
 package com.example
 
-import aws.sdk.kotlin.runtime.auth.credentials.ProfileCredentialsProvider
-import aws.sdk.kotlin.services.secretsmanager.SecretsManagerClient
 import aws.sdk.kotlin.services.secretsmanager.getSecretValue
+import com.example.aws.clients.SecretsManagerClientProvider
 import io.ktor.util.logging.*
 import java.io.InputStream
 
@@ -24,16 +23,12 @@ object FirebaseAdminSdkProvider {
                 ?: error("$filename not found in resources")
         }
 
-        val client = SecretsManagerClient.fromEnvironment {
-            this.credentialsProvider = ProfileCredentialsProvider(profileName = PROFILE_NAME)
-        }
-        try {
+        val client = SecretsManagerClientProvider.get()
+        client.use { client ->
             val response = client.getSecretValue { secretId = SECRET_ID }
             logger.info("Loaded Firebase Admin SDK credentials from Secrets Manager (secretId=$SECRET_ID)")
             val value = response.secretString ?: error("Secret $SECRET_ID has no string value")
             return value.byteInputStream()
-        } finally {
-            client.close()
         }
     }
 }

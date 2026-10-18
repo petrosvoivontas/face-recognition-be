@@ -1,18 +1,12 @@
 package com.example
 
-import aws.sdk.kotlin.runtime.auth.credentials.ProfileCredentialsProvider
-import aws.sdk.kotlin.services.rekognition.RekognitionClient
-import aws.sdk.kotlin.services.rekognition.createCollection
-import aws.sdk.kotlin.services.rekognition.deleteCollection
-import aws.sdk.kotlin.services.rekognition.indexFaces
-import aws.sdk.kotlin.services.rekognition.listFaces
+import aws.sdk.kotlin.services.rekognition.*
 import aws.sdk.kotlin.services.rekognition.model.Image
 import aws.sdk.kotlin.services.rekognition.model.QualityFilter
+import com.example.aws.clients.RekognitionClientProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlin.time.Duration.Companion.milliseconds
-
-const val PROFILE_NAME = "AdministratorAccess-411055095438"
 
 class RekognitionService : HealthCheck {
 
@@ -30,10 +24,7 @@ class RekognitionService : HealthCheck {
     }
 
     suspend fun initialize() {
-        INSTANCE = RekognitionClient.fromEnvironment {
-            this.credentialsProvider = ProfileCredentialsProvider(profileName = PROFILE_NAME)
-        }
-//        INSTANCE = RekognitionClient { region = "eu-central-1" }
+        INSTANCE = RekognitionClientProvider.get()
     }
 
     suspend fun createCollection(collectionId: String): Int {
@@ -46,7 +37,10 @@ class RekognitionService : HealthCheck {
         return response.statusCode ?: 500
     }
 
-    suspend fun listCollections(firestoreService: FirestoreService, ownedIds: Map<String, String>): List<CollectionInfo> {
+    suspend fun listCollections(
+        firestoreService: FirestoreService,
+        ownedIds: Map<String, String>
+    ): List<CollectionInfo> {
         val results = mutableListOf<CollectionInfo>()
         for (batch in ownedIds.entries.chunked(RekognitionConstants.LIST_FACES_TPS)) {
             val batchStart = System.currentTimeMillis()
@@ -59,7 +53,14 @@ class RekognitionService : HealthCheck {
                     imagesCount == 0 -> CollectionStatus.EMPTY
                     else -> CollectionStatus.IN_PROGRESS
                 }
-                results.add(CollectionInfo(id = id, displayName = displayName, imagesCount = imagesCount, status = status))
+                results.add(
+                    CollectionInfo(
+                        id = id,
+                        displayName = displayName,
+                        imagesCount = imagesCount,
+                        status = status
+                    )
+                )
             }
             val elapsed = System.currentTimeMillis() - batchStart
             if (elapsed < RekognitionConstants.QUOTA_WINDOW_MS) {

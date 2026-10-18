@@ -1,8 +1,8 @@
 package com.example
 
-import aws.sdk.kotlin.runtime.auth.credentials.ProfileCredentialsProvider
 import aws.sdk.kotlin.services.secretsmanager.SecretsManagerClient
 import aws.sdk.kotlin.services.secretsmanager.getSecretValue
+import com.example.aws.clients.SecretsManagerClientProvider
 import io.ktor.util.logging.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -52,9 +52,7 @@ class StripeParamsProvider(private val logger: Logger) : HealthCheck {
 
     suspend fun initialize(scope: CoroutineScope) {
 //        client = SecretsManagerClient { region = REGION }
-        client = SecretsManagerClient.fromEnvironment {
-            this.credentialsProvider = ProfileCredentialsProvider(profileName = PROFILE_NAME)
-        }
+        client = SecretsManagerClientProvider.get()
         if (envSecretKey != null && envWebhookSecret != null) {
             secretKeyRef.set(SecretValue(envSecretKey, null))
             webhookSecretsRef.set(WebhookSecrets(SecretValue(envWebhookSecret, null), null))
