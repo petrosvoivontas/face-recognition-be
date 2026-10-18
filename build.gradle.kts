@@ -28,6 +28,7 @@ dependencies {
     implementation(ktorLibs.serialization.kotlinx.json)
     implementation(libs.logback.classic)
     implementation(libs.aws.rekognition)
+    implementation(libs.aws.secretsmanager)
     implementation(libs.firebase.admin)
     implementation(libs.stripe.java)
 

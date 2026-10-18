@@ -8,6 +8,7 @@ stripe-java = "33.1.1"
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 aws-rekognition = { module = "aws.sdk.kotlin:rekognition", version.ref = "aws-kotlin-sdk" }
+aws-secretsmanager = { module = "aws.sdk.kotlin:secretsmanager", version.ref = "aws-kotlin-sdk" }
 firebase-admin = { module = "com.google.firebase:firebase-admin", version.ref = "firebase-admin" }
 stripe-java = { module = "com.stripe:stripe-java", version.ref = "stripe-java" }
 
