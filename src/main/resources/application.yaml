@@ -1,6 +1,6 @@
 ktor:
   deployment:
-    port: ${PORT:5000}
+    port: "$PORT:5000"
   application:
     modules:
       - com.example.ApplicationKt.module
