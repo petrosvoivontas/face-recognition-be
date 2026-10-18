@@ -10,6 +10,7 @@ import com.google.cloud.firestore.Firestore
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.cloud.FirestoreClient
+import io.ktor.util.logging.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -37,25 +38,24 @@ data class FirestorePose(
     )
 }
 
-class FirestoreService : HealthCheck {
-
-    init {
-        if (FirebaseApp.getApps().isEmpty()) {
-            val serviceAccount = FirestoreService::class.java.classLoader
-                .getResourceAsStream("faceme-prod-adminsdk.json")
-                ?: error("faceme-prod-adminsdk.json not found in resources")
-            val options = FirebaseOptions.builder()
-                .setCredentials(GoogleCredentials.fromStream(serviceAccount))
-                .build()
-            FirebaseApp.initializeApp(options)
-        }
-        INSTANCE = FirestoreClient.getFirestore()
-    }
+class FirestoreService private constructor() : HealthCheck {
 
     companion object {
         private var INSTANCE: Firestore? = null
         val firestore: Firestore
             get() = INSTANCE!!
+
+        suspend fun create(logger: Logger): FirestoreService {
+            if (FirebaseApp.getApps().isEmpty()) {
+                val serviceAccount = FirebaseAdminSdkProvider.loadServiceAccountJson(logger)
+                val options = FirebaseOptions.builder()
+                    .setCredentials(GoogleCredentials.fromStream(serviceAccount))
+                    .build()
+                FirebaseApp.initializeApp(options)
+            }
+            INSTANCE = FirestoreClient.getFirestore()
+            return FirestoreService()
+        }
 
         private const val CATEGORIZATIONS_COLLECTION_PATH = "categorizations"
         private const val FACE_DETAILS_COLLECTION_PATH = "faceDetails"

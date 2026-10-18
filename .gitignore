@@ -2,3 +2,4 @@ build
 .idea
 .gradle
 src/main/resources/faceme-prod-adminsdk.json
+src/main/resources/faceme-uat-adminsdk.json
