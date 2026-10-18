@@ -76,7 +76,7 @@ class StripeService(
         return attached
     }
 
-    suspend fun attachPaymentMethodAndSubscribe(uid: String, customerId: String, paymentMethodId: String): Subscription {
+    suspend fun attachPaymentMethodAndSubscribe(uid: String, customerId: String, priceId: String, paymentMethodId: String): Subscription {
         return withContext(Dispatchers.IO) {
             val paymentMethod = attachAsDefaultPaymentMethod(customerId, paymentMethodId)
 
@@ -86,7 +86,7 @@ class StripeService(
                     .setDefaultPaymentMethod(paymentMethodId)
                     .addItem(
                         SubscriptionCreateParams.Item.builder()
-                            .setPrice(StripeConfig.priceId)
+                            .setPrice(priceId)
                             .build()
                     )
                     .build()

@@ -300,6 +300,7 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
             val uid = call.requireUid(authService) ?: return@post
             val userInfo = lookupUserInfo(uid)
             val customerId = stripeService.getOrCreateCustomer(uid, userInfo?.email, userInfo?.displayName)
+            firestoreService.getAccountStripePriceId(uid)?.let { firestoreService.saveStripePriceId(uid, it) }
             val clientSecret = stripeService.createSetupIntent(customerId)
             call.respond(SetupIntentResponse(clientSecret))
         }
@@ -307,9 +308,12 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
         post("/billing/subscribe") {
             val uid = call.requireUid(authService) ?: return@post
             val request = call.receive<SubscribeRequest>()
-            val customerId = firestoreService.getBillingProfile(uid)?.stripeCustomerId
+            val profile = firestoreService.getBillingProfile(uid)
+            val customerId = profile?.stripeCustomerId
                 ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No Stripe customer on file. Call /billing/setup-intent first."))
-            val subscription = stripeService.attachPaymentMethodAndSubscribe(uid, customerId, request.paymentMethodId)
+            val priceId = profile.stripePriceId
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No Stripe price configured. Call /billing/setup-intent first."))
+            val subscription = stripeService.attachPaymentMethodAndSubscribe(uid, customerId, priceId, request.paymentMethodId)
             call.respond(SubscribeResponse(subscription.status))
         }
 

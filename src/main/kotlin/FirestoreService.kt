@@ -85,6 +85,7 @@ class FirestoreService : HealthCheck {
         private const val FIELD_UPDATED_AT = "updatedAt"
         private const val FIELD_CARD_BRAND = "cardBrand"
         private const val FIELD_CARD_LAST4 = "cardLast4"
+        private const val FIELD_STRIPE_PRICE_ID = "stripePriceId"
     }
 
     override fun isHealthy(): Boolean {
@@ -288,12 +289,24 @@ class FirestoreService : HealthCheck {
         }
     }
 
+    suspend fun getAccountStripePriceId(uid: String): String? {
+        return withContext(Dispatchers.IO) {
+            val snapshot = firestore.collection(ACCOUNTS_COLLECTION_PATH)
+                .whereEqualTo(FIELD_UID, uid)
+                .limit(1)
+                .get()
+                .get()
+            snapshot.documents.firstOrNull()?.getString(FIELD_STRIPE_PRICE_ID)
+        }
+    }
+
     data class BillingProfile(
         val stripeCustomerId: String?,
         val stripeSubscriptionId: String?,
         val subscriptionStatus: String?,
         val cardBrand: String?,
-        val cardLast4: String?
+        val cardLast4: String?,
+        val stripePriceId: String?
     )
 
     suspend fun getBillingProfile(uid: String): BillingProfile? {
@@ -305,8 +318,23 @@ class FirestoreService : HealthCheck {
                 stripeSubscriptionId = doc.getString(FIELD_STRIPE_SUBSCRIPTION_ID),
                 subscriptionStatus = doc.getString(FIELD_SUBSCRIPTION_STATUS),
                 cardBrand = doc.getString(FIELD_CARD_BRAND),
-                cardLast4 = doc.getString(FIELD_CARD_LAST4)
+                cardLast4 = doc.getString(FIELD_CARD_LAST4),
+                stripePriceId = doc.getString(FIELD_STRIPE_PRICE_ID)
             )
+        }
+    }
+
+    suspend fun saveStripePriceId(uid: String, stripePriceId: String) {
+        withContext(Dispatchers.IO) {
+            firestore.collection(BILLING_PROFILES_COLLECTION_PATH).document(uid)
+                .set(
+                    mapOf(
+                        FIELD_STRIPE_PRICE_ID to stripePriceId,
+                        FIELD_UPDATED_AT to FieldValue.serverTimestamp()
+                    ),
+                    com.google.cloud.firestore.SetOptions.merge()
+                )
+                .get()
         }
     }
 
