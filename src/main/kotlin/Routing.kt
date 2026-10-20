@@ -46,7 +46,10 @@ data class ErrorResponse(val message: String)
 data class SetupIntentResponse(val clientSecret: String)
 
 @Serializable
-data class SubscribeRequest(val paymentMethodId: String)
+data class PaymentRequirementResponse(val clientSecret: String?)
+
+@Serializable
+data class SubscribeRequest(val paymentMethodId: String? = null)
 
 @Serializable
 data class SubscribeResponse(val status: String)
@@ -299,13 +302,28 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
             }
         }
 
-        post("/billing/setup-intent") {
+        post("/billing/update-payment-method-setup-intent") {
+            val uid = call.requireUid(authService) ?: return@post
+            val customerId = firestoreService.getBillingProfile(uid)?.stripeCustomerId
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No Stripe customer on file."))
+            val clientSecret = stripeService.createSetupIntent(customerId)
+            call.respond(SetupIntentResponse(clientSecret))
+        }
+
+        post("/billing/payment-requirement") {
             val uid = call.requireUid(authService) ?: return@post
             val userInfo = lookupUserInfo(uid)
             val customerId = stripeService.getOrCreateCustomer(uid, userInfo?.email, userInfo?.displayName)
-            firestoreService.getAccountStripePriceId(uid)?.let { firestoreService.saveStripePriceId(uid, it) }
-            val clientSecret = stripeService.createSetupIntent(customerId)
-            call.respond(SetupIntentResponse(clientSecret))
+            val priceId = firestoreService.getAccountStripePriceId(uid)
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No Stripe price configured for this account."))
+            firestoreService.saveStripePriceId(uid, priceId)
+
+            val clientSecret = if (stripeService.priceRequiresPaymentMethod(priceId)) {
+                stripeService.createSetupIntent(customerId)
+            } else {
+                null
+            }
+            call.respond(PaymentRequirementResponse(clientSecret))
         }
 
         post("/billing/subscribe") {
@@ -313,10 +331,21 @@ suspend fun Application.configureRouting(authService: AuthService = FirebaseAuth
             val request = call.receive<SubscribeRequest>()
             val profile = firestoreService.getBillingProfile(uid)
             val customerId = profile?.stripeCustomerId
-                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No Stripe customer on file. Call /billing/setup-intent first."))
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No Stripe customer on file. Call /billing/payment-requirement first."))
             val priceId = profile.stripePriceId
-                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No Stripe price configured. Call /billing/setup-intent first."))
-            val subscription = stripeService.attachPaymentMethodAndSubscribe(uid, customerId, priceId, request.paymentMethodId)
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("No Stripe price configured. Call /billing/payment-requirement first."))
+
+            val paymentMethodId = request.paymentMethodId
+            val subscription = if (paymentMethodId != null) {
+                stripeService.attachPaymentMethodAndSubscribe(uid, customerId, priceId, paymentMethodId)
+            } else {
+                // Never trust the client's choice to omit a payment method; re-check the price
+                // server-side so a modified client can't skip card collection on a paid plan.
+                if (stripeService.priceRequiresPaymentMethod(priceId)) {
+                    return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("A payment method is required for this price."))
+                }
+                stripeService.subscribeWithoutPaymentMethod(uid, customerId, priceId)
+            }
             call.respond(SubscribeResponse(subscription.status))
         }
 

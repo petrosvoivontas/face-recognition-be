@@ -3,6 +3,7 @@ package com.example
 import com.stripe.exception.SignatureVerificationException
 import com.stripe.model.Customer
 import com.stripe.model.PaymentMethod
+import com.stripe.model.Price
 import com.stripe.model.Subscription
 import com.stripe.model.billing.MeterEvent
 import com.stripe.net.Webhook
@@ -51,6 +52,34 @@ class StripeService(
                 .addPaymentMethodType("card")
                 .build()
             com.stripe.model.SetupIntent.create(params).clientSecret
+        }
+    }
+
+    // A price only skips payment-method collection when it's a flat, non-tiered $0 price.
+    // Anything tiered/graduated or with a non-zero unit amount is treated as requiring a card,
+    // including metered prices with a real per-unit rate (their base unit amount may read as
+    // null/non-zero even though no usage has been billed yet).
+    suspend fun priceRequiresPaymentMethod(priceId: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            val price = Price.retrieve(priceId)
+            !(price.billingScheme == "per_unit" && price.unitAmount == 0L)
+        }
+    }
+
+    suspend fun subscribeWithoutPaymentMethod(uid: String, customerId: String, priceId: String): Subscription {
+        return withContext(Dispatchers.IO) {
+            val subscription = Subscription.create(
+                SubscriptionCreateParams.builder()
+                    .setCustomer(customerId)
+                    .addItem(
+                        SubscriptionCreateParams.Item.builder()
+                            .setPrice(priceId)
+                            .build()
+                    )
+                    .build()
+            )
+            firestoreService.saveSubscription(uid, subscription.id, subscription.status)
+            subscription
         }
     }
 
