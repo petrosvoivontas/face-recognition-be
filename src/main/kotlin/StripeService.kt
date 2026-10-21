@@ -26,7 +26,7 @@ class StripeService(
 
     suspend fun getOrCreateCustomer(uid: String, email: String?, name: String?): String {
         return withContext(Dispatchers.IO) {
-            val existing = firestoreService.getBillingProfile(uid)?.stripeCustomerId
+            val existing = firestoreService.getAccountStripeCustomerId(uid)
             if (existing != null) {
                 logger.debug("found existing Stripe customer id=$existing")
                 return@withContext existing

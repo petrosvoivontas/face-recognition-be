@@ -301,7 +301,6 @@ class FirestoreService private constructor() : HealthCheck {
     }
 
     data class BillingProfile(
-        val stripeCustomerId: String?,
         val stripeSubscriptionId: String?,
         val subscriptionStatus: String?,
         val cardBrand: String?,
@@ -314,13 +313,23 @@ class FirestoreService private constructor() : HealthCheck {
             val doc = firestore.collection(BILLING_PROFILES_COLLECTION_PATH).document(uid).get().get()
             if (!doc.exists()) return@withContext null
             BillingProfile(
-                stripeCustomerId = doc.getString(FIELD_STRIPE_CUSTOMER_ID),
                 stripeSubscriptionId = doc.getString(FIELD_STRIPE_SUBSCRIPTION_ID),
                 subscriptionStatus = doc.getString(FIELD_SUBSCRIPTION_STATUS),
                 cardBrand = doc.getString(FIELD_CARD_BRAND),
                 cardLast4 = doc.getString(FIELD_CARD_LAST4),
                 stripePriceId = doc.getString(FIELD_STRIPE_PRICE_ID)
             )
+        }
+    }
+
+    suspend fun getAccountStripeCustomerId(uid: String): String? {
+        return withContext(Dispatchers.IO) {
+            val snapshot = firestore.collection(ACCOUNTS_COLLECTION_PATH)
+                .whereEqualTo(FIELD_UID, uid)
+                .limit(1)
+                .get()
+                .get()
+            snapshot.documents.firstOrNull()?.getString(FIELD_STRIPE_CUSTOMER_ID)
         }
     }
 
@@ -340,13 +349,22 @@ class FirestoreService private constructor() : HealthCheck {
 
     suspend fun saveStripeCustomerId(uid: String, stripeCustomerId: String, email: String?) {
         withContext(Dispatchers.IO) {
-            val doc = mutableMapOf(
-                FIELD_STRIPE_CUSTOMER_ID to stripeCustomerId,
-                FIELD_UPDATED_AT to FieldValue.serverTimestamp()
-            )
-            if (email != null) doc[FIELD_EMAIL] = email
+            val accountSnapshot = firestore.collection(ACCOUNTS_COLLECTION_PATH)
+                .whereEqualTo(FIELD_UID, uid)
+                .limit(1)
+                .get()
+                .get()
+            val accountDoc = accountSnapshot.documents.firstOrNull()
+                ?: throw IllegalStateException("No account document found for uid=$uid")
+            accountDoc.reference.set(
+                mapOf(FIELD_STRIPE_CUSTOMER_ID to stripeCustomerId),
+                com.google.cloud.firestore.SetOptions.merge()
+            ).get()
+
+            val billingProfileDoc = mutableMapOf<String, Any>(FIELD_UPDATED_AT to FieldValue.serverTimestamp())
+            if (email != null) billingProfileDoc[FIELD_EMAIL] = email
             firestore.collection(BILLING_PROFILES_COLLECTION_PATH).document(uid)
-                .set(doc, com.google.cloud.firestore.SetOptions.merge())
+                .set(billingProfileDoc, com.google.cloud.firestore.SetOptions.merge())
                 .get()
         }
     }
@@ -393,19 +411,20 @@ class FirestoreService private constructor() : HealthCheck {
 
     suspend fun updateSubscriptionStatusByCustomerId(stripeCustomerId: String, status: String) {
         withContext(Dispatchers.IO) {
-            val snapshot = firestore.collection(BILLING_PROFILES_COLLECTION_PATH)
+            val accountSnapshot = firestore.collection(ACCOUNTS_COLLECTION_PATH)
                 .whereEqualTo(FIELD_STRIPE_CUSTOMER_ID, stripeCustomerId)
                 .limit(1)
                 .get()
                 .get()
-            val doc = snapshot.documents.firstOrNull() ?: return@withContext
-            doc.reference.set(
-                mapOf(
-                    FIELD_SUBSCRIPTION_STATUS to status,
-                    FIELD_UPDATED_AT to FieldValue.serverTimestamp()
-                ),
-                com.google.cloud.firestore.SetOptions.merge()
-            ).get()
+            val uid = accountSnapshot.documents.firstOrNull()?.getString(FIELD_UID) ?: return@withContext
+            firestore.collection(BILLING_PROFILES_COLLECTION_PATH).document(uid)
+                .set(
+                    mapOf(
+                        FIELD_SUBSCRIPTION_STATUS to status,
+                        FIELD_UPDATED_AT to FieldValue.serverTimestamp()
+                    ),
+                    com.google.cloud.firestore.SetOptions.merge()
+                ).get()
         }
     }
 }
